@@ -3,7 +3,7 @@ using System.Drawing;
 using Silk.NET.Windowing;
 using Silk.NET.Windowing.Common;
 
-namespace HelloVulkan 
+namespace HelloVulkan
 {
     public class HelloTriangleApp
     {
@@ -23,6 +23,7 @@ namespace HelloVulkan
             opts.Size = new Size(800, 600);
             opts.WindowBorder = WindowBorder.Fixed;
             opts.Title = "Vulkan";
+            opts.API = GraphicsAPI.DefaultVulkan;
             _window = Window.Create(opts) as IVulkanWindow;
             if (_window == null || !_window.IsVulkanSupported)
             {
@@ -42,7 +43,7 @@ namespace HelloVulkan
 
         private void Cleanup()
         {
-            
+
         }
     }
 }

@@ -7,7 +7,15 @@ namespace HelloVulkan
         static void Main(string[] args)
         {
             var app = new HelloTriangleApp();
-            app.Run();
+            try
+            {
+                app.Run();
+            }
+            catch (System.Exception e)
+            {
+
+                throw;
+            }
         }
     }
 }
