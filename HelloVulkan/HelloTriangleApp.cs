@@ -26,13 +26,13 @@ namespace HelloVulkan
 
         public void Run()
         {
-            initWindow();
+            InitWindow();
             InitVulkan();
             MainLoop();
             Cleanup();
         }
 
-        private void initWindow()
+        private void InitWindow()
         {
             var opts = WindowOptions.DefaultVulkan;
             opts.Size = new Size(WIDTH, HEIGHT);
