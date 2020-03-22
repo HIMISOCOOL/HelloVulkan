@@ -1,10 +1,12 @@
 using System;
+using System.Linq;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 using Silk.NET.Windowing;
 using Silk.NET.Windowing.Common;
+using Silk.NET.Vulkan.Extensions.EXT;
 
 namespace HelloVulkan
 {
@@ -16,8 +18,9 @@ namespace HelloVulkan
 
         private IVulkanWindow _window;
         private Vk _vk;
+        private ExtDebugUtils _debugUtils;
         private Instance _instance;
-
+        private DebugUtilsMessengerEXT _debugMessenger;
 #if DEBUG
         private readonly bool EnableValidationLayers = true;
 #else
@@ -49,6 +52,7 @@ namespace HelloVulkan
         private void InitVulkan()
         {
             CreateInstance();
+            SetupDebugMessenger();
         }
 
         private unsafe void CreateInstance()
@@ -70,35 +74,61 @@ namespace HelloVulkan
                 ApiVersion = Vk.Version10
             };
 
+            char** extensions = GetRequiredExtensions(out uint extCount);
+
             var createInfo = new InstanceCreateInfo
             {
                 SType = StructureType.InstanceCreateInfo,
-                PApplicationInfo = &appInfo
+                PApplicationInfo = &appInfo,
+                EnabledExtensionCount = extCount,
+                PpEnabledExtensionNames = (byte**) extensions
             };
 
-            char** extensions = _window.GetRequiredExtensions(out var extCount);
-            createInfo.EnabledExtensionCount = extCount;
-            createInfo.PpEnabledExtensionNames = (byte**) extensions;
-
+            // debug info is here to make sure it doesnt get destroyed before vk.CreateInstance
+            var debugCreateInfo = new DebugUtilsMessengerCreateInfoEXT();
             if (EnableValidationLayers)
             {
                 createInfo.EnabledLayerCount = (uint) _validationLayers.Length;
                 createInfo.PpEnabledLayerNames =  (byte**) SilkMarshal.MarshalStringArrayToPtr(_validationLayers);
+
+                PopulateDebugMessengerCreateInfo(ref debugCreateInfo);
+                createInfo.PNext = &debugCreateInfo;
             }
             else
             {
                 createInfo.EnabledLayerCount = 0;
+                createInfo.PNext = null;
             }
 
             fixed(Instance* instance = &_instance)
             {
-                var result = _vk.CreateInstance(&createInfo, null, instance);
+                Result result = _vk.CreateInstance(&createInfo, null, instance);
                 if (result != Result.Success)
                 {
                     throw new Exception("Failed to create instance!");
                 }
             }
             _vk.CurrentInstance = _instance;
+        }
+
+        /// <summary>
+        /// Gets the list of required extensions.
+        /// Appends debug utils if validation layers are enabled
+        /// </summary>
+        /// <param name="glfwExtensionCount">An out param with the count of extensions</param>
+        /// <returns>The array of extensions</returns>
+        private unsafe char** GetRequiredExtensions(out uint glfwExtensionCount) {
+            glfwExtensionCount = 0;
+            char** glfwExtensions = _window.GetRequiredExtensions(out glfwExtensionCount);
+
+            if (EnableValidationLayers)
+            {
+                // TODO: find where the constant for VK_EXT_DEBUG_UTILS_EXTENSION_NAME lives
+                string[] glfwExtensionsArray = SilkMarshal.MarshalPtrToStringArray((IntPtr)glfwExtensions, (int)glfwExtensionCount).Append("VK_EXT_debug_utils").ToArray();
+                return (char**)SilkMarshal.MarshalStringArrayToPtr(glfwExtensionsArray.ToArray());
+            }
+
+            return glfwExtensions;
         }
 
         private unsafe bool CheckValidationLayerSupport()
@@ -133,6 +163,58 @@ namespace HelloVulkan
             return true;
         }
 
+        private unsafe void SetupDebugMessenger()
+        {
+            if (!EnableValidationLayers || !_vk.TryGetExtension(out _debugUtils))
+            {
+                return;
+            }
+
+            var createInfo = new DebugUtilsMessengerCreateInfoEXT();
+            PopulateDebugMessengerCreateInfo(ref createInfo);
+
+            fixed(DebugUtilsMessengerEXT* debugMessenger = &_debugMessenger)
+            {
+                Result result = _debugUtils.CreateDebugUtilsMessenger(_instance, &createInfo, null, debugMessenger);
+                if (result != Result.Success)
+                {
+                    throw new SystemException("Failed to setup Debug Messenger");
+                }
+            }
+        }
+
+        private unsafe void PopulateDebugMessengerCreateInfo(ref DebugUtilsMessengerCreateInfoEXT createInfo)
+        {
+            createInfo.SType = StructureType.DebugUtilsMessengerCreateInfoExt;
+            createInfo.MessageSeverity = DebugUtilsMessageSeverityFlagsEXT.DebugUtilsMessageSeverityVerboseBitExt
+            | DebugUtilsMessageSeverityFlagsEXT.DebugUtilsMessageSeverityWarningBitExt
+            | DebugUtilsMessageSeverityFlagsEXT.DebugUtilsMessageSeverityErrorBitExt;
+            createInfo.MessageType = DebugUtilsMessageTypeFlagsEXT.DebugUtilsMessageTypeGeneralBitExt
+            | DebugUtilsMessageTypeFlagsEXT.DebugUtilsMessageTypePerformanceBitExt
+            | DebugUtilsMessageTypeFlagsEXT.DebugUtilsMessageTypeValidationBitExt;
+            createInfo.PfnUserCallback = FuncPtr.Of<DebugUtilsMessengerCallbackFunctionEXT>(DebugCallback);
+        }
+
+        private unsafe uint DebugCallback(
+            DebugReportFlagsEXT debugFlags,
+            DebugReportObjectTypeEXT debugObjectType,
+            ulong @object,
+            UIntPtr location,
+            int messageCode,
+            char* pLayerPrefix,
+            char* pMessage,
+            void* pUserData)
+        {
+            string flags = debugFlags.ToString().Replace("DebugReport", string.Empty);
+            string layerPrefix = Marshal.PtrToStringAnsi((IntPtr) pLayerPrefix);
+            string objectType = debugObjectType.ToString().Replace("DebugReportObjectType", string.Empty);
+            string message = SilkMarshal.MarshalPtrToString((IntPtr) pLayerPrefix);
+            string log = $"Flags: [{flags}]\nObjectType: {objectType}\nCode: {messageCode} Layer Prefix: {layerPrefix}/\nMessage: {message}";
+            Console.WriteLine();
+
+            return Vk.False;
+        }
+
         private void MainLoop()
         {
             _window.Run();
@@ -140,7 +222,12 @@ namespace HelloVulkan
 
         private unsafe void Cleanup()
         {
-            _vk.DestroyInstance(_instance, (AllocationCallbacks*) null);
+            if (EnableValidationLayers)
+            {
+                _debugUtils.DestroyDebugUtilsMessenger(_instance, _debugMessenger, null);
+            }
+
+            _vk.DestroyInstance(_instance, null);
         }
     }
 }
