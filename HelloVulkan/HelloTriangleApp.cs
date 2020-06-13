@@ -13,21 +13,25 @@ namespace HelloVulkan
 {
     public class HelloTriangleApp
     {
+#region Cosnts
         private const int WIDTH = 800;
         private const int HEIGHT = 600;
-        private string[] _validationLayers = {"VK_LAYER_KHRONOS_validation"};
-        private string[] _instanceExtensions = {ExtDebugUtils.ExtensionName};
+        private readonly string[] _validationLayers = {"VK_LAYER_KHRONOS_validation"};
+        private readonly string[] _instanceExtensions = {ExtDebugUtils.ExtensionName};
+    #if DEBUG
+        private readonly bool EnableValidationLayers = true;
+    #else
+        private readonly bool EnableValidationLayers = false;
+    #endif
+#endregion
 
+#region  Instance Variables
         private IWindow _window;
         private Vk _vk;
         private ExtDebugUtils _debugUtils;
         private Instance _instance;
         private DebugUtilsMessengerEXT _debugMessenger;
-#if DEBUG
-        private readonly bool EnableValidationLayers = true;
-#else
-        private readonly bool EnableValidationLayers = false;
-#endif
+#endregion
 
         public void Run()
         {
@@ -155,6 +159,7 @@ namespace HelloVulkan
             return true;
         }
 
+#region DebugMessenger
         private unsafe void SetupDebugMessenger()
         {
             if (!EnableValidationLayers || !_vk.TryGetInstanceExtension(_instance, out _debugUtils))
@@ -202,6 +207,8 @@ namespace HelloVulkan
 
             return Vk.False;
         }
+#endregion
+
 
         private void MainLoop()
         {
