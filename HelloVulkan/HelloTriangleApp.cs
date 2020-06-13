@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using Silk.NET.Core.Native;
@@ -27,10 +26,11 @@ namespace HelloVulkan
 
 #region  Instance Variables
         private IWindow _window;
-        private Vk _vk;
-        private ExtDebugUtils _debugUtils;
         private Instance _instance;
         private DebugUtilsMessengerEXT _debugMessenger;
+        private PhysicalDevice _physicalDevice;
+        private ExtDebugUtils _debugUtils;
+        private Vk _vk;
 #endregion
 
         public void Run()
@@ -59,6 +59,7 @@ namespace HelloVulkan
         {
             CreateInstance();
             SetupDebugMessenger();
+            PickPhysicalDevice();
         }
 
         private unsafe void CreateInstance()
@@ -209,6 +210,33 @@ namespace HelloVulkan
         }
 #endregion
 
+        private unsafe void PickPhysicalDevice()
+        {
+            uint deviceCount = 0u;
+            _vk.EnumeratePhysicalDevices(_instance, &deviceCount, (PhysicalDevice*) null);
+
+            if (deviceCount == 0) {
+                throw new NotSupportedException("Failed to find GPUs with Vulkan support!");
+            }
+            PhysicalDevice* devices = stackalloc PhysicalDevice[(int) deviceCount];
+            _vk.EnumeratePhysicalDevices(_instance, &deviceCount, devices);
+
+            for (int i = 0; i < deviceCount; i++)
+            {
+                PhysicalDevice device = devices[i];
+                if (IsDeviceSuitable(device))
+                {
+                    _physicalDevice = device;
+                    return;
+                }
+            }
+            throw new Exception("No suitable device.");
+        }
+
+        private unsafe bool IsDeviceSuitable(PhysicalDevice device)
+        {
+            return true;
+        }
 
         private void MainLoop()
         {
