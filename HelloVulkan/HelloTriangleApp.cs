@@ -12,26 +12,28 @@ namespace HelloVulkan
 {
     public class HelloTriangleApp
     {
-#region Cosnts
+        #region Cosnts
         private const int WIDTH = 800;
         private const int HEIGHT = 600;
-        private readonly string[] _validationLayers = {"VK_LAYER_KHRONOS_validation"};
-        private readonly string[] _instanceExtensions = {ExtDebugUtils.ExtensionName};
-    #if DEBUG
+        private readonly string[] _validationLayers = { "VK_LAYER_KHRONOS_validation" };
+        private readonly string[] _instanceExtensions = { ExtDebugUtils.ExtensionName };
+#if DEBUG
         private readonly bool EnableValidationLayers = true;
-    #else
+#else
         private readonly bool EnableValidationLayers = false;
-    #endif
-#endregion
+#endif
+        #endregion
 
-#region  Instance Variables
+        #region  Instance Variables
         private IWindow _window;
         private Instance _instance;
         private DebugUtilsMessengerEXT _debugMessenger;
         private PhysicalDevice _physicalDevice;
+        private Device _device;
+        private Queue _graphicsQueue;
         private ExtDebugUtils _debugUtils;
         private Vk _vk;
-#endregion
+        #endregion
 
         public void Run()
         {
@@ -60,6 +62,7 @@ namespace HelloVulkan
             CreateInstance();
             SetupDebugMessenger();
             PickPhysicalDevice();
+            CreateLogicalDevice();
         }
 
         private unsafe void CreateInstance()
@@ -74,14 +77,14 @@ namespace HelloVulkan
             var appInfo = new ApplicationInfo
             {
                 SType = StructureType.ApplicationInfo,
-                PApplicationName =  (byte*) Marshal.StringToHGlobalAnsi("Hello Triangle"),
+                PApplicationName = (byte*)Marshal.StringToHGlobalAnsi("Hello Triangle"),
                 ApplicationVersion = Vk.MakeVersion(1, 0),
-                PEngineName = (byte*) Marshal.StringToHGlobalAnsi("No Engine"),
+                PEngineName = (byte*)Marshal.StringToHGlobalAnsi("No Engine"),
                 EngineVersion = Vk.MakeVersion(1, 0),
                 ApiVersion = Vk.Version11
             };
 
-            var extensions = (byte**) _window.VkSurface.GetRequiredExtensions(out var extCount);
+            var extensions = (byte**)_window.VkSurface.GetRequiredExtensions(out var extCount);
             byte** newExtensions = stackalloc byte*[(int)(extCount + _instanceExtensions.Length)];
             for (int i = 0; i < extCount; i++)
             {
@@ -90,7 +93,7 @@ namespace HelloVulkan
 
             for (var i = 0; i < _instanceExtensions.Length; i++)
             {
-                newExtensions[extCount + i] = (byte*) SilkMarshal.MarshalStringToPtr(_instanceExtensions[i]);
+                newExtensions[extCount + i] = (byte*)SilkMarshal.MarshalStringToPtr(_instanceExtensions[i]);
             }
 
             extCount += (uint)_instanceExtensions.Length;
@@ -107,8 +110,8 @@ namespace HelloVulkan
             var debugCreateInfo = new DebugUtilsMessengerCreateInfoEXT();
             if (EnableValidationLayers)
             {
-                createInfo.EnabledLayerCount = (uint) _validationLayers.Length;
-                createInfo.PpEnabledLayerNames =  (byte**) SilkMarshal.MarshalStringArrayToPtr(_validationLayers);
+                createInfo.EnabledLayerCount = (uint)_validationLayers.Length;
+                createInfo.PpEnabledLayerNames = (byte**)SilkMarshal.MarshalStringArrayToPtr(_validationLayers);
                 createInfo.PNext = &debugCreateInfo;
             }
             else
@@ -117,7 +120,7 @@ namespace HelloVulkan
                 createInfo.PNext = null;
             }
 
-            fixed(Instance* instance = &_instance)
+            fixed (Instance* instance = &_instance)
             {
                 Result result = _vk.CreateInstance(&createInfo, null, instance);
                 if (result != Result.Success)
@@ -131,10 +134,10 @@ namespace HelloVulkan
         private unsafe bool CheckValidationLayerSupport()
         {
             uint layerCount = 0;
-            _vk.EnumerateInstanceLayerProperties(&layerCount, (LayerProperties*) null);
+            _vk.EnumerateInstanceLayerProperties(&layerCount, (LayerProperties*)null);
 
             var availableLayers = new LayerProperties[layerCount];
-            fixed(LayerProperties* availableLayersPtr = availableLayers)
+            fixed (LayerProperties* availableLayersPtr = availableLayers)
             {
                 _vk.EnumerateInstanceLayerProperties(&layerCount, availableLayersPtr);
             }
@@ -144,7 +147,7 @@ namespace HelloVulkan
                 var layerFound = false;
                 foreach (LayerProperties layerProperties in availableLayers)
                 {
-                    if (layerName == Marshal.PtrToStringAnsi((IntPtr) layerProperties.LayerName))
+                    if (layerName == Marshal.PtrToStringAnsi((IntPtr)layerProperties.LayerName))
                     {
                         layerFound = true;
                         break;
@@ -160,7 +163,7 @@ namespace HelloVulkan
             return true;
         }
 
-#region DebugMessenger
+        #region DebugMessenger
         private unsafe void SetupDebugMessenger()
         {
             if (!EnableValidationLayers || !_vk.TryGetInstanceExtension(_instance, out _debugUtils))
@@ -171,7 +174,7 @@ namespace HelloVulkan
             var createInfo = new DebugUtilsMessengerCreateInfoEXT();
             PopulateDebugMessengerCreateInfo(ref createInfo);
 
-            fixed(DebugUtilsMessengerEXT* debugMessenger = &_debugMessenger)
+            fixed (DebugUtilsMessengerEXT* debugMessenger = &_debugMessenger)
             {
                 Result result = _debugUtils.CreateDebugUtilsMessenger(_instance, &createInfo, null, debugMessenger);
                 if (result != Result.Success)
@@ -202,24 +205,25 @@ namespace HelloVulkan
         {
             string sev = messageSeverity.ToReadableString();
             string type = messageTypes.ToReadableString();
-            string message = Marshal.PtrToStringAnsi((IntPtr) pCallbackData->PMessage);
+            string message = Marshal.PtrToStringAnsi((IntPtr)pCallbackData->PMessage);
             string log = $"Severity: [{sev}]\nType: {type}\nMessage: {message}";
             Console.WriteLine(log);
 
             return Vk.False;
         }
-#endregion
+        #endregion
 
-#region Query PhysicalDevice
+        #region Query PhysicalDevice
         private unsafe void PickPhysicalDevice()
         {
             uint deviceCount = 0;
-            _vk.EnumeratePhysicalDevices(_instance, &deviceCount, (PhysicalDevice*) null);
+            _vk.EnumeratePhysicalDevices(_instance, &deviceCount, (PhysicalDevice*)null);
 
-            if (deviceCount == 0) {
+            if (deviceCount == 0)
+            {
                 throw new NotSupportedException("Failed to find GPUs with Vulkan support!");
             }
-            PhysicalDevice* devices = stackalloc PhysicalDevice[(int) deviceCount];
+            PhysicalDevice* devices = stackalloc PhysicalDevice[(int)deviceCount];
             _vk.EnumeratePhysicalDevices(_instance, &deviceCount, devices);
 
             for (int i = 0; i < deviceCount; i++)
@@ -245,9 +249,9 @@ namespace HelloVulkan
         {
             QueueFamilyIndices indices = new QueueFamilyIndices();
             uint queueFamilyCount = 0;
-            _vk.GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, (QueueFamilyProperties*) null);
+            _vk.GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, (QueueFamilyProperties*)null);
 
-            QueueFamilyProperties* queueFamilies = stackalloc QueueFamilyProperties[(int) queueFamilyCount];
+            QueueFamilyProperties* queueFamilies = stackalloc QueueFamilyProperties[(int)queueFamilyCount];
             _vk.GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies);
 
             for (uint i = 0; i < queueFamilyCount; i++)
@@ -266,7 +270,58 @@ namespace HelloVulkan
 
             return indices;
         }
-#endregion
+        #endregion
+
+        #region LogicalDevice
+        private unsafe void CreateLogicalDevice()
+        {
+            QueueFamilyIndices indices = FindQueueFamilies(_physicalDevice);
+
+            float queuePriority = 1.0f;
+            var queueCreateInfo = new DeviceQueueCreateInfo
+            {
+                SType = StructureType.DeviceQueueCreateInfo,
+                QueueFamilyIndex = indices.GraphicsFamily.Value,
+                QueueCount = 1,
+                PQueuePriorities = &queuePriority
+            };
+
+            var deviceFeatures = new PhysicalDeviceFeatures();
+
+            var createInfo = new DeviceCreateInfo
+            {
+                SType = StructureType.DeviceCreateInfo,
+                PQueueCreateInfos = &queueCreateInfo,
+                QueueCreateInfoCount = 1,
+                PEnabledFeatures = &deviceFeatures,
+                EnabledExtensionCount = 0
+            };
+
+            if (EnableValidationLayers)
+            {
+                createInfo.EnabledLayerCount = (uint)_validationLayers.Length;
+                createInfo.PpEnabledLayerNames = (byte**)SilkMarshal.MarshalStringArrayToPtr(_validationLayers);
+            }
+            else
+            {
+                createInfo.EnabledLayerCount = 0;
+            }
+
+            fixed (Device* device = &_device)
+            {
+                Result result = _vk.CreateDevice(_physicalDevice, &createInfo, (AllocationCallbacks*)null, device);
+                if (result != Result.Success)
+                {
+                    throw new Exception("Failed to create logical device!");
+                }
+            }
+
+            fixed (Queue* graphicsQueue = &_graphicsQueue)
+            {
+                _vk.GetDeviceQueue(_device, indices.GraphicsFamily.Value, 0, graphicsQueue);
+            }
+        }
+        #endregion
 
         private void MainLoop()
         {
@@ -275,12 +330,13 @@ namespace HelloVulkan
 
         private unsafe void Cleanup()
         {
+            _vk.DestroyDevice(_device, (AllocationCallbacks*)null);
             if (EnableValidationLayers)
             {
-                _debugUtils.DestroyDebugUtilsMessenger(_instance, _debugMessenger, (AllocationCallbacks*) null);
+                _debugUtils.DestroyDebugUtilsMessenger(_instance, _debugMessenger, (AllocationCallbacks*)null);
             }
 
-            _vk.DestroyInstance(_instance, (AllocationCallbacks*) null);
+            _vk.DestroyInstance(_instance, (AllocationCallbacks*)null);
         }
     }
 }
