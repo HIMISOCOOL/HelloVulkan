@@ -131,7 +131,7 @@ namespace HelloVulkan
         private unsafe bool CheckValidationLayerSupport()
         {
             uint layerCount = 0;
-            _vk.EnumerateInstanceLayerProperties(&layerCount, (LayerProperties*) 0);
+            _vk.EnumerateInstanceLayerProperties(&layerCount, (LayerProperties*) null);
 
             var availableLayers = new LayerProperties[layerCount];
             fixed(LayerProperties* availableLayersPtr = availableLayers)
@@ -210,9 +210,10 @@ namespace HelloVulkan
         }
 #endregion
 
+#region Query PhysicalDevice
         private unsafe void PickPhysicalDevice()
         {
-            uint deviceCount = 0u;
+            uint deviceCount = 0;
             _vk.EnumeratePhysicalDevices(_instance, &deviceCount, (PhysicalDevice*) null);
 
             if (deviceCount == 0) {
@@ -235,8 +236,37 @@ namespace HelloVulkan
 
         private unsafe bool IsDeviceSuitable(PhysicalDevice device)
         {
-            return true;
+            QueueFamilyIndices indices = FindQueueFamilies(device);
+
+            return indices.IsComplete;
         }
+
+        private unsafe QueueFamilyIndices FindQueueFamilies(PhysicalDevice device)
+        {
+            QueueFamilyIndices indices = new QueueFamilyIndices();
+            uint queueFamilyCount = 0;
+            _vk.GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, (QueueFamilyProperties*) null);
+
+            QueueFamilyProperties* queueFamilies = stackalloc QueueFamilyProperties[(int) queueFamilyCount];
+            _vk.GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies);
+
+            for (uint i = 0; i < queueFamilyCount; i++)
+            {
+                QueueFamilyProperties queueFamily = queueFamilies[i];
+                if (queueFamily.QueueFlags.HasFlag(QueueFlags.QueueGraphicsBit))
+                {
+                    indices.GraphicsFamily = i;
+                }
+
+                if (indices.IsComplete)
+                {
+                    break;
+                }
+            }
+
+            return indices;
+        }
+#endregion
 
         private void MainLoop()
         {
