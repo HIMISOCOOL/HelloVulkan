@@ -7,12 +7,13 @@ using Silk.NET.Windowing;
 using Silk.NET.Windowing.Common;
 using Silk.NET.Vulkan.Extensions.EXT;
 using HelloVulkan.extensions;
+using Silk.NET.Vulkan.Extensions.KHR;
 
 namespace HelloVulkan
 {
     public class HelloTriangleApp
     {
-        #region Cosnts
+        #region Consts
         private const int WIDTH = 800;
         private const int HEIGHT = 600;
         private readonly string[] _validationLayers = { "VK_LAYER_KHRONOS_validation" };
@@ -28,11 +29,15 @@ namespace HelloVulkan
         private IWindow _window;
         private Instance _instance;
         private DebugUtilsMessengerEXT _debugMessenger;
+        private SurfaceKHR _surface;
+
         private PhysicalDevice _physicalDevice;
         private Device _device;
         private Queue _graphicsQueue;
+        private Queue _presentQueue;
         private ExtDebugUtils _debugUtils;
         private Vk _vk;
+        private KhrSurface _vkSurface;
         #endregion
 
         public void Run()
@@ -55,12 +60,15 @@ namespace HelloVulkan
             {
                 throw new NotSupportedException("Windowing does not Support Vulkan");
             }
+
+            _window.Initialize();
         }
 
         private void InitVulkan()
         {
             CreateInstance();
             SetupDebugMessenger();
+            CreateSurface();
             PickPhysicalDevice();
             CreateLogicalDevice();
         }
@@ -129,6 +137,11 @@ namespace HelloVulkan
                 }
             }
             _vk.CurrentInstance = _instance;
+
+            if (!_vk.TryGetInstanceExtension(_instance, out _vkSurface))
+            {
+                throw new NotSupportedException("KHR_surface extensions not found");
+            }
         }
 
         private unsafe bool CheckValidationLayerSupport()
@@ -213,6 +226,11 @@ namespace HelloVulkan
         }
         #endregion
 
+        private unsafe void CreateSurface()
+        {
+            _surface = _window.VkSurface.Create<AllocationCallbacks>(_instance.ToHandle(), null).ToSurface();
+        }
+
         #region Query PhysicalDevice
         private unsafe void PickPhysicalDevice()
         {
@@ -247,7 +265,7 @@ namespace HelloVulkan
 
         private unsafe QueueFamilyIndices FindQueueFamilies(PhysicalDevice device)
         {
-            QueueFamilyIndices indices = new QueueFamilyIndices();
+            var indices = new QueueFamilyIndices();
             uint queueFamilyCount = 0;
             _vk.GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, (QueueFamilyProperties*)null);
 
@@ -260,6 +278,13 @@ namespace HelloVulkan
                 if (queueFamily.QueueFlags.HasFlag(QueueFlags.QueueGraphicsBit))
                 {
                     indices.GraphicsFamily = i;
+                }
+
+                _vkSurface.GetPhysicalDeviceSurfaceSupport(device, i, _surface, out Bool32 presentSupport);
+
+                if (presentSupport == Vk.True)
+                {
+                    indices.PresentFamily = i;
                 }
 
                 if (indices.IsComplete)
@@ -277,22 +302,30 @@ namespace HelloVulkan
         {
             QueueFamilyIndices indices = FindQueueFamilies(_physicalDevice);
 
+            uint[] uniqueQueueFamilies = new[] { indices.GraphicsFamily.Value, indices.PresentFamily.Value };
+            var queueCreateInfos = stackalloc DeviceQueueCreateInfo[uniqueQueueFamilies.Length];
+
             float queuePriority = 1.0f;
-            var queueCreateInfo = new DeviceQueueCreateInfo
+            for (int i = 0; i < uniqueQueueFamilies.Length; i++)
             {
-                SType = StructureType.DeviceQueueCreateInfo,
-                QueueFamilyIndex = indices.GraphicsFamily.Value,
-                QueueCount = 1,
-                PQueuePriorities = &queuePriority
-            };
+                uint queueFamily = uniqueQueueFamilies[i];
+                var queueCreateInfo = new DeviceQueueCreateInfo
+                {
+                    SType = StructureType.DeviceQueueCreateInfo,
+                    QueueFamilyIndex = queueFamily,
+                    QueueCount = 1,
+                    PQueuePriorities = &queuePriority
+                };
+                queueCreateInfos[i] = queueCreateInfo;
+            }
 
             var deviceFeatures = new PhysicalDeviceFeatures();
 
             var createInfo = new DeviceCreateInfo
             {
                 SType = StructureType.DeviceCreateInfo,
-                PQueueCreateInfos = &queueCreateInfo,
-                QueueCreateInfoCount = 1,
+                PQueueCreateInfos = queueCreateInfos,
+                QueueCreateInfoCount = (uint) uniqueQueueFamilies.Length,
                 PEnabledFeatures = &deviceFeatures,
                 EnabledExtensionCount = 0
             };
@@ -320,6 +353,11 @@ namespace HelloVulkan
             {
                 _vk.GetDeviceQueue(_device, indices.GraphicsFamily.Value, 0, graphicsQueue);
             }
+
+            fixed (Queue* presentQueue = &_presentQueue)
+            {
+                _vk.GetDeviceQueue(_device, indices.PresentFamily.Value, 0, presentQueue);
+            }
         }
         #endregion
 
@@ -335,7 +373,7 @@ namespace HelloVulkan
             {
                 _debugUtils.DestroyDebugUtilsMessenger(_instance, _debugMessenger, (AllocationCallbacks*)null);
             }
-
+            _vkSurface.DestroySurface(_instance, _surface, (AllocationCallbacks*)null);
             _vk.DestroyInstance(_instance, (AllocationCallbacks*)null);
         }
     }
