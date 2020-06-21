@@ -4,6 +4,8 @@ namespace HelloVulkan
     {
         public uint? GraphicsFamily;
 
-        public bool IsComplete => GraphicsFamily.HasValue;
+        public uint? PresentFamily;
+
+        public bool IsComplete => GraphicsFamily.HasValue && PresentFamily.HasValue;
     }
 }
